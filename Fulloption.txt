@@ -1,0 +1,554 @@
+        local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/insanedude59/SplixUiLib/main/Main"))()
+
+        local windowName = "6ix Tools"
+        local window = library:new({
+            textsize = 13,
+            font = Enum.Font.RobotoMono,
+            name = windowName,
+            color = Color3.fromRGB(225, 58, 81)
+        })
+
+        local tab = window:page({name = "main"})
+        local flySection = tab:section({name = "Fly Function", side = "left", size = 200})
+
+        local UIS = game:GetService("UserInputService")
+        local RS = game:GetService("RunService")
+        local player = game.Players.LocalPlayer
+        local char = player.Character or player.CharacterAdded:Wait()
+        local hrp = char:WaitForChild("HumanoidRootPart")
+        local humanoid = char:WaitForChild("Humanoid")
+
+        local noclipEnabled = false
+
+        local function toggleNoclip(state)
+            noclipEnabled = state
+        end
+
+        RS:BindToRenderStep("Noclip", Enum.RenderPriority.Character.Value, function()
+            if noclipEnabled and player.Character then
+                for _, part in pairs(player.Character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+
+        flySection:toggle({
+            name = "Noclip",
+            def = false,
+            callback = toggleNoclip
+        })
+
+        local aimbotSection = tab:section({name = "Aimbot", side = "right", size = 200})
+
+        local aimbotEnabled = false
+        local aimbotRadius = 300
+        local camera = workspace.CurrentCamera
+
+        local aimbotTarget = nil
+        local mouse = player:GetMouse()
+
+        -- ตรวจจับคลิกขวาเพื่อล็อกเป้าหมาย
+        mouse.Button2Down:Connect(function()
+            local closest = nil
+            local shortestDist = math.huge
+
+            for _, p in ipairs(game.Players:GetPlayers()) do
+                if p ~= player and p.Character and p.Character:FindFirstChild("Head") then
+                    local head = p.Character.Head
+                    local screenPos, visible = camera:WorldToViewportPoint(head.Position)
+                    if visible then
+                        local dist = (Vector2.new(screenPos.X, screenPos.Y) - UIS:GetMouseLocation()).Magnitude
+                        if dist < shortestDist then
+                            closest = p
+                            shortestDist = dist
+                        end
+                    end
+                end
+            end
+
+            if closest then
+                aimbotTarget = closest.Character and closest.Character:FindFirstChild("Head")
+                library:notify("ล็อคเป้า: " .. closest.Name)
+            end
+        end)
+
+        -- หมุนกล้องไปที่เป้า (ถ้ามี)
+        RS:BindToRenderStep("Aimbot", Enum.RenderPriority.Camera.Value + 1, function()
+            if aimbotEnabled and aimbotTarget then
+                camera.CFrame = CFrame.new(camera.CFrame.Position, aimbotTarget.Position)
+            end
+        end)
+
+        -- Toggle เปิด/ปิด aimbot
+        aimbotSection:toggle({
+            name = "Enable Aimbot (คลิกขวาเพื่อเล็ง)",
+            def = false,
+            callback = function(state)
+                aimbotEnabled = state
+                if not state then
+                    aimbotTarget = nil
+                end
+            end
+        })
+
+
+        aimbotSection:toggle({
+            name = "Enable Aimbot",
+            def = false,
+            callback = function(state)
+                aimbotEnabled = state
+            end
+        })
+
+        aimbotSection:slider({
+            name = "Aimbot Radius",
+            def = 300,
+            min = 50,
+            max = 1000,
+            rounding = true,
+            measuring = " px",
+            callback = function(val)
+                aimbotRadius = val
+            end
+        })
+
+        local espEnabled = false
+        local tracers = {}
+
+        local function clearTracers()
+            for _, tracer in pairs(tracers) do
+                tracer:Remove()
+            end
+            tracers = {}
+        end
+
+        local function updateTracers()
+            clearTracers()
+            if not espEnabled then return end
+
+            for _, p in pairs(game.Players:GetPlayers()) do
+                if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = p.Character.HumanoidRootPart
+
+                    local tracer = Drawing.new("Line")
+                    tracer.Color = Color3.fromRGB(255, 0, 0)
+                    tracer.Thickness = 1.5
+                    tracer.Transparency = 1
+                    tracer.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+                    tracer.To = Vector2.new()
+
+                    table.insert(tracers, tracer)
+                end
+            end
+        end
+
+        RS:BindToRenderStep("ESPTracers", Enum.RenderPriority.Camera.Value + 2, function()
+            if not espEnabled then return end
+
+            for i, p in pairs(game.Players:GetPlayers()) do
+                local tracer = tracers[i]
+                if tracer and p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = p.Character.HumanoidRootPart
+                    local screenPos, onScreen = camera:WorldToViewportPoint(hrp.Position)
+                    if onScreen then
+                        tracer.To = Vector2.new(screenPos.X, screenPos.Y)
+                        tracer.Visible = true
+                    else
+                        tracer.Visible = false
+                    end
+                end
+            end
+        end)
+
+        aimbotSection:toggle({
+            name = "Enable ESP (Tracer)",
+            def = false,
+            callback = function(state)
+                espEnabled = state
+                if not state then clearTracers() else updateTracers() end
+            end
+        })
+
+        aimbotSection:button({
+            name = "Respawn",
+            callback = function()
+                if player.Character and player.Character:FindFirstChild("Humanoid") then
+                    player.Character:BreakJoints()
+                end
+            end
+        })
+
+        local targetPlayer = nil
+
+        aimbotSection:textbox({
+            name = "Target Player Name",
+            def = "",
+            placeholder = "กรอกชื่อผู้เล่น",
+            callback = function(text)
+                local found = false
+                for _, plr in ipairs(game.Players:GetPlayers()) do
+                    local nameMatch = string.find(string.lower(plr.Name), string.lower(text))
+                    local displayMatch = string.find(string.lower(plr.DisplayName), string.lower(text))
+                    if nameMatch or displayMatch then
+                        targetPlayer = plr
+
+                        task.delay(0.1, function()
+                            local gui = game:GetService("CoreGui"):FindFirstChild(windowName)
+                            if gui then
+                                for _, v in pairs(gui:GetDescendants()) do
+                                    if v:IsA("TextBox") and v.PlaceholderText == "กรอกชื่อผู้เล่น" then
+                                        v.Text = plr.Name
+                                        break
+                                    end
+                                end
+                            end
+                        end)
+
+                        library:notify("เจอผู้เล่น: " .. plr.Name)
+                        found = true
+                        break
+                    end
+                end
+                if not found then
+                    targetPlayer = nil
+                    library:notify("ไม่พบผู้เล่นที่ชื่อ: " .. text)
+                end
+            end
+        })
+
+        aimbotSection:button({
+            name = "View Target",
+            callback = function()
+                if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") then
+                    workspace.CurrentCamera.CameraSubject = targetPlayer.Character.Humanoid
+                    library:notify("กำลังดู: " .. targetPlayer.Name)
+                else
+                    library:notify("ไม่สามารถดูผู้เล่นได้")
+                end
+            end
+        })
+
+        aimbotSection:button({
+            name = "Unview",
+            callback = function()
+                if player.Character and player.Character:FindFirstChild("Humanoid") then
+                    workspace.CurrentCamera.CameraSubject = player.Character.Humanoid
+                    library:notify("กลับมากล้องของตัวเองแล้ว")
+                end
+            end
+        })
+
+        -- Fly (Safe Freeze without BodyGyro)
+        local flyEnabled = false
+        local flySpeed = 35
+        local flyBodyVelocity = nil
+
+        local function createFlyVelocity()
+            if not hrp:FindFirstChild("SafeFlyVelocity") then
+                flyBodyVelocity = Instance.new("BodyVelocity")
+                flyBodyVelocity.Name = "SafeFlyVelocity"
+                flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+                flyBodyVelocity.P = 1e5
+                flyBodyVelocity.Velocity = Vector3.zero
+                flyBodyVelocity.Parent = hrp
+            else
+                flyBodyVelocity = hrp:FindFirstChild("SafeFlyVelocity")
+            end
+        end
+
+        local function removeFlyVelocity()
+            if flyBodyVelocity then
+                flyBodyVelocity:Destroy()
+                flyBodyVelocity = nil
+            end
+        end
+
+        -- ป้องกันตัวหมุน/เอน โดย force ยืดตรงทุกเฟรม
+        RS:BindToRenderStep("SafeFly", Enum.RenderPriority.Input.Value, function()
+            if flyEnabled and hrp then
+                createFlyVelocity()
+                local camCF = workspace.CurrentCamera.CFrame
+                local moveDir = Vector3.zero
+
+                if UIS:IsKeyDown(Enum.KeyCode.W) then
+                    moveDir += camCF.LookVector
+                end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then
+                    moveDir -= camCF.LookVector
+                end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then
+                    moveDir -= camCF.RightVector
+                end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then
+                    moveDir += camCF.RightVector
+                end
+                if UIS:IsKeyDown(Enum.KeyCode.E) then
+                    moveDir += Vector3.new(0, 1, 0)
+                end
+                if UIS:IsKeyDown(Enum.KeyCode.Q) then
+                    moveDir -= Vector3.new(0, 1, 0)
+                end
+
+                -- Update velocity
+                if moveDir.Magnitude > 0 then
+                    flyBodyVelocity.Velocity = moveDir.Unit * flySpeed
+                else
+                    flyBodyVelocity.Velocity = Vector3.zero
+                end
+
+                -- ล็อก Rotation ทุกเฟรมให้ยืนตรง ไม่หมุนตามแรงฟิสิกส์
+                hrp.RotVelocity = Vector3.zero
+                hrp.Orientation = Vector3.new(0, hrp.Orientation.Y, 0)
+            end
+        end)
+
+        -- ปุ่มเปิด/ปิด Fly
+        flySection:toggle({
+            name = "Fly",
+            def = false,
+            callback = function(state)
+                flyEnabled = state
+                local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if state then
+                        humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+                        createFlyVelocity()
+                    else
+                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                        removeFlyVelocity()
+                    end
+                end
+            end
+        })
+
+        -- ปรับความเร็ว
+        flySection:slider({
+            name = "Fly Speed",
+            def = 35,
+            min = 10,
+            max = 599,
+            rounding = true,
+            measuring = " speed",
+            callback = function(val)
+                flySpeed = val
+            end
+        })
+
+        UIS.InputBegan:Connect(function(input, gameProcessed)
+            if not gameProcessed and input.KeyCode == Enum.KeyCode.F then
+                flyEnabled = not flyEnabled
+                local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if flyEnabled then
+                        humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+                        createFlyVelocity()
+                        library:notify("Fly: ON")
+                    else
+                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                        removeFlyVelocity()
+                        library:notify("Fly: OFF")
+                    end
+                end
+            end
+        end)
+
+        local tuaraiEnabled = false
+        local dashDistance = 20
+        local dashTime = 0.4
+
+        local TweenService = game:GetService("TweenService")
+        local player = game.Players.LocalPlayer
+        local character = player.Character or player.CharacterAdded:Wait()
+        local humanoid = character:WaitForChild("Humanoid")
+        local hrp = character:WaitForChild("HumanoidRootPart")
+
+        local lastHealth = humanoid.Health
+
+        local function dashForward(distance, time)
+            if not tuaraiEnabled then return end
+            local direction = hrp.CFrame.LookVector
+            local goalPosition = hrp.Position + direction * distance
+
+            local tweenInfo = TweenInfo.new(
+                time,
+                Enum.EasingStyle.Sine,
+                Enum.EasingDirection.Out
+            )
+
+            local tween = TweenService:Create(hrp, tweenInfo, {
+                CFrame = CFrame.new(goalPosition, goalPosition + direction)
+            })
+            tween:Play()
+        end
+
+        humanoid.HealthChanged:Connect(function(newHealth)
+            if tuaraiEnabled and newHealth < lastHealth then
+                dashForward(dashDistance, dashTime)
+            end
+            lastHealth = newHealth
+        end)
+
+        flySection:toggle({
+            name = "Tuarai (Auto Dash เมื่อโดนตี)",
+            def = false,
+            callback = function(state)
+                tuaraiEnabled = state
+            end
+        })
+
+        flySection:slider({
+            name = "ระยะตัวไหล",
+            def = 20,
+            min = 5,
+            max = 100,
+            rounding = true,
+            measuring = " studs",
+            callback = function(val)
+                dashDistance = val
+            end
+        })
+
+        flySection:slider({
+            name = "ระยะเวลา dash",
+            def = 0.4,
+            min = 0.1,
+            max = 2,
+            rounding = false,
+            measuring = " s",
+            callback = function(val)
+                dashTime = val
+            end
+        })
+        local playerTab = window:page({name = "Player"})
+        local playerSection = playerTab:section({name = "Player Mods", side = "left", size = 200})
+        local targetPlayer = nil
+
+        local function getAllPlayerNames()
+            local names = {}
+            for _, p in ipairs(game.Players:GetPlayers()) do
+                if p ~= player then
+                    table.insert(names, p.Name)
+                end
+            end
+            return names
+        end
+
+        playerSection:dropdown({
+            name = "Player Target",
+            def = "",
+            max = 10,
+            options = getAllPlayerNames(),
+            callback = function(selected)
+                for _, p in ipairs(game.Players:GetPlayers()) do
+                    if p.Name == selected then
+                        targetPlayer = p
+                        library:notify("เลือก: " .. p.Name)
+                        break
+                    end
+                end
+            end
+        })
+        game.Players.PlayerAdded:Connect(function()
+            task.wait(1)
+            local gui = game:GetService("CoreGui"):FindFirstChild(windowName)
+            if gui then
+                for _, v in pairs(gui:GetDescendants()) do
+                    if v:IsA("TextButton") and v.Text == "Player Target" then
+                        v:Destroy() 
+                    end
+                end
+            end
+            playerSection:dropdown({
+                name = "Player Target",
+                def = "",
+                max = 10,
+                options = getAllPlayerNames(),
+                callback = function(selected)
+                    for _, p in ipairs(game.Players:GetPlayers()) do
+                        if p.Name == selected then
+                            targetPlayer = p
+                            library:notify("เลือก: " .. p.Name)
+                            break
+                        end
+                    end
+                end
+            })
+        end)
+
+        game.Players.PlayerRemoving:Connect(function()
+            task.wait(1)
+
+        end)
+        playerSection:button({
+            name = "Teleport to Target",
+            callback = function()
+                if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    player.Character:PivotTo(targetPlayer.Character.HumanoidRootPart.CFrame)
+                    library:notify("วาร์ปไปที่: " .. targetPlayer.Name)
+                end
+            end
+        })
+        local autoHeadsit = false
+        -- Ring Parts System
+        local rotatingEnabled = false
+        local rotationRadius = 10
+        local rotationSpeed = 3
+
+        local function getNearbyUnanchoredParts(center, radius)
+            local parts = {}
+            for _, part in ipairs(workspace:GetDescendants()) do
+                if part:IsA("BasePart") and not part.Anchored and (part.Position - center.Position).Magnitude <= radius and not part:IsDescendantOf(player.Character) then
+                    table.insert(parts, part)
+                end
+            end
+            return parts
+        end
+
+        RS:BindToRenderStep("RotateNearbyParts", Enum.RenderPriority.Last.Value, function()
+            if rotatingEnabled and player.Character and hrp then
+                local time = tick()
+                local parts = getNearbyUnanchoredParts(hrp, rotationRadius + 5)
+                for index, part in ipairs(parts) do
+                    local angle = time * rotationSpeed + (index * math.pi * 2 / #parts)
+                    local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * rotationRadius
+                    local targetPos = hrp.Position + offset
+                    local direction = (targetPos - part.Position)
+                    part.Velocity = direction.Unit * math.clamp(direction.Magnitude * 5, 0, 100)
+                end
+            end
+        end)
+
+        flySection:toggle({
+            name = "Ring Parts",
+            def = false,
+            callback = function(state)
+                rotatingEnabled = state
+                library:notify("Ring Parts " .. (state and "เปิดใช้งาน" or "ปิดแล้ว"))
+            end
+        })
+
+        flySection:slider({
+            name = "ระยะวงโคจร",
+            def = 10,
+            min = 5,
+            max = 50,
+            rounding = true,
+            measuring = " studs",
+            callback = function(val)
+                rotationRadius = val
+            end
+        })
+
+        flySection:slider({
+            name = "ความเร็วการหมุน",
+            def = 3,
+            min = 0.5,
+            max = 100,
+            rounding = true,
+            measuring = " speed",
+            callback = function(val)
+                rotationSpeed = val
+            end
+        })
